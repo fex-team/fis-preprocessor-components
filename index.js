@@ -1,9 +1,16 @@
 var path = require('path');
 var map = fis.compile.lang;
-var componentsInfo, componentsDir;
+var componentsInfo, componentsDir, ld, rd;
 
 var exports = module.exports = function (content, file, settings) {
     buildComponentsInfo();
+
+    if (!ld) {
+        ld = settings.left_delimiter || fis.config.get('settings.smarty.left_delimiter') || fis.config.get('settings.template.left_delimiter') || '{%';
+        rd = settings.right_delimiter || fis.config.get('settings.smarty.right_delimiter') || fis.config.get('settings.template.right_delimiter') || '%}';
+        ld = fis.util.escapeReg(ld);
+        rd = fis.util.escapeReg(rd);
+    }
 
     // 先让 fis compile 走一遍。
     if (file.isHtmlLike) {
@@ -237,7 +244,31 @@ exports.compileHtmlReplaceCallback = function compileHtmlReplaceCallback(m, $1, 
 exports.extHtml = function(content, callback) {
     content = fis.compile.extHtml(content, callback || exports.compileHtmlReplaceCallback);
 
-    // 扩展 smarty, swig 中的 js 和 css 代码块的识别。
+    // 扩展 smarty 中的 js 和 css 代码块的识别。
+    var reg = new RegExp('('+ld+'script(?:(?=\\s)[\\s\\S]*?["\'\\s\\w]'+rd+'|'+rd+'))([\\s\\S]*?)(?='+ld+'\\/script'+rd+'|$)|('+ld+'style(?:(?=\\s)[\\s\\S]*?["\'\\s\\w\\-]'+rd+'|'+rd+'))([\\s\\S]*?)(?='+ld+'\\/style\\s*'+rd+'|$)', 'ig');
+
+    content = content.replace(reg, function(m, $1, $2, $3, $4){
+        if ($1) {
+            m = $1 + exports.extJs($2);
+        } else if($3){
+            m = $3 + exports.extCss($4);
+        }
+        return m;
+    });
+
+
+    // 扩展 swig 中的 js 和 css 代码块的识别。
+    reg = new RegExp('('+ld+'script(?:(?=\\s)[\\s\\S]*?["\'\\s\\w]'+rd+'|'+rd+'))([\\s\\S]*?)(?='+ld+'endscript'+rd+'|$)|('+ld+'style(?:(?=\\s)[\\s\\S]*?["\'\\s\\w\\-]'+rd+'|'+rd+'))([\\s\\S]*?)(?='+ld+'endstyle\\s*'+rd+'|$)', 'ig');
+
+    content = content.replace(reg, function(m, $1, $2, $3, $4){
+        if ($1) {
+            m = $1 + exports.extJs($2);
+        } else if($3){
+            m = $3 + exports.extCss($4);
+        }
+        return m;
+    });
+
 
     return content;
 };
