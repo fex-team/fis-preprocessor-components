@@ -22,6 +22,10 @@ var exports = module.exports = function (content, file, settings) {
             value = fn(value, file);
         }
 
+        if (type === 'embed' || type === 'jsEmbed') {
+            value = '<<<' + type + ':' + value + '>>>';
+        }
+
         return value;
     });
     return content;
@@ -103,7 +107,7 @@ exports.replaceRequire = function(value, file) {
 
         // 根据规则找到了。
         if (resolved.file) {
-            return quote + resolved.file.getId() + quote;
+            return quote + resolved.file.getId()  + info.query + quote;
         }
     }
 
@@ -134,7 +138,7 @@ exports.replace = function(value, file) {
 
         // 根据规则找到了。
         if (resolved.file) {
-            return quote + resolved.file.subpath + quote;
+            return quote + resolved.file.subpath + info.query + quote;
         }
     }
 
