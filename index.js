@@ -254,9 +254,9 @@ exports.extJs = function(content, callback) {
             var res = addAsync(value);
 
             if (res.hasBrackets) {
-                m = 'require.async([' + res.values.join(', ') + ']';
+                m = type + '([' + res.values.join(', ') + ']';
             } else {
-                m = 'require.async(' + res.values.join(', ');
+                m = type + '(' + res.values.join(', ');
             }
         }
 
