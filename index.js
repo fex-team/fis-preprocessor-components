@@ -24,6 +24,8 @@ var exports = module.exports = function (content, file, settings) {
 
         if (type === 'embed' || type === 'jsEmbed') {
             value = '<<<' + type + ':' + value + '>>>';
+        } else if (type === 'uri' && /[?&]__inline(?:[=&'"]|$)/.test(value)) {
+            value = '<<<' + (file.isJsLike ? 'jsEmbed' : 'embed') + ':' + value + '>>>';
         } else if (type === 'uri' && file.isJsLike) {
             value = '<<<' + type + ':' + value + '>>>';
         }
