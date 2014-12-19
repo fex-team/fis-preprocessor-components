@@ -82,6 +82,7 @@ function init() {
 
                 // 根据规则找到了。
                 if (resolved.file) {
+                    info.id = resolved.file.getId();
                     info.file = resolved.file;
                 }
             }
