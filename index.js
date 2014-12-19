@@ -82,7 +82,7 @@ function init() {
 
                 // 根据规则找到了。
                 if (resolved.file) {
-                    return resolved;
+                    info.file = resolved.file;
                 }
             }
 
