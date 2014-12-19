@@ -1,148 +1,18 @@
 var path = require('path');
-var map = fis.compile.lang;
-var componentsInfo, componentsDir;
-
-var embeddedMap = {};
-
-function error(msg){
-    //for watching, unable to exit
-    embeddedMap = {};
-    fis.log.error(msg);
-}
-function embeddedCheck(main, embedded){
-    main = fis.file.wrap(main).realpath;
-    embedded = fis.file.wrap(embedded).realpath;
-    if(main === embedded){
-        error('unable to embed file[' + main + '] into itself.');
-    } else if(embeddedMap[embedded]) {
-        var next = embeddedMap[embedded],
-            msg = [embedded];
-        while(next && next !== embedded){
-            msg.push(next);
-            next = embeddedMap[next];
-        }
-        msg.push(embedded);
-        error('circular dependency on [' + msg.join('] -> [') + '].');
-    }
-    embeddedMap[embedded] = main;
-    return true;
-}
-
-function embeddedUnlock(file){
-    delete embeddedMap[file.realpath];
-}
-
-function addDeps(a, b){
-    if(a && a.cache && b){
-        if(b.cache){
-            a.cache.mergeDeps(b.cache);
-        }
-        a.cache.addDeps(b.realpath || b);
-    }
-}
+var inited = false, componentsInfo, componentsDir;
 
 var exports = module.exports = function (content, file, settings) {
-    buildComponentsInfo();
-
-    // 先让 fis compile 走一遍。
-    if (file.isHtmlLike) {
-        content = exports.extHtml(content);
-    } else if (file.isJsLike) {
-        content = exports.extJs(content);
-    } else if (file.isCssLike) {
-        content = exports.extCss(content);
-    }
-
-    content = exports.parse(content, file, settings);
-    content = content.replace(/\<\<\<(\w+)\:([\s\S]*?)\>\>\>/ig, function(all, type, value) {
-        var fn = exports['replace' + ucfirst(type) ] || exports.replace;
-
-        if (fn && typeof fn === 'function') {
-            value = fn(value, file);
-        }
-
-
-
-        var ret = '', info;
-            try {
-                switch(type){
-                    case 'require':
-                        info = fis.uri.getId(value, file.dirname);
-                        file.addRequire(info.id);
-                        ret = info.quote + info.id + info.quote;
-                        break;
-                    case 'uri':
-                        info = fis.uri(value, file.dirname);
-                        if(info.file && info.file.isFile()){
-                            if(info.file.useHash && fis.compile.settings.hash){
-                                if(embeddedCheck(file, info.file)){
-                                    fis.compile(info.file);
-                                    addDeps(file, info.file);
-                                }
-                            }
-                            var query = (info.file.query && info.query) ? '&' + info.query.substring(1) : info.query;
-                            var url = info.file.getUrl(fis.compile.settings.hash, fis.compile.settings.domain);
-                            var hash = info.hash || info.file.hash;
-                            ret = info.quote + url + query + hash + info.quote;
-                        } else {
-                            ret = value;
-                        }
-                        break;
-                    case 'dep':
-                        if(file.cache){
-                            info = fis.uri(value, file.dirname);
-                            addDeps(file, info.file);
-                        } else {
-                            fis.log.warning('unable to add deps to file [' + path + ']');
-                        }
-                        break;
-                    case 'embed':
-                    case 'jsEmbed':
-                        info = fis.uri(value, file.dirname);
-                        var f;
-                        if(info.file){
-                            f = info.file;
-                        } else if(fis.util.isAbsolute(info.rest)){
-                            f = fis.file(info.rest);
-                        }
-                        if(f && f.isFile()){
-                            if(embeddedCheck(file, f)){
-                                fis.compile(f);
-                                addDeps(file, f);
-                                f.requires.forEach(function(id){
-                                    file.addRequire(id);
-                                });
-                                if(f.isText()){
-                                    ret = f.getContent();
-                                    if(type === 'jsEmbed' && !f.isJsLike && !f.isJsonLike){
-                                        ret = JSON.stringify(ret);
-                                    }
-                                } else {
-                                    ret = info.quote + f.getBase64() + info.quote;
-                                }
-                            }
-                        } else {
-                            fis.log.error('unable to embed non-existent file [' + value + ']');
-                        }
-                        break;
-                    default :
-                        fis.log.error('unsupported fis language tag [' + type + ']');
-                }
-            } catch (e) {
-                embeddedMap = {};
-                e.message = e.message + ' in [' + file.subpath + ']';
-                throw  e;
-            }
-            return ret;
-    });
+    init();
     return content;
 };
 
-function buildComponentsInfo() {
-    if (componentsInfo) {
-        return componentsInfo;
+function init() {
+    if (inited) {
+        return;
     }
+    inited = true;
 
+    // 读取组件信息
     componentsInfo = {};
     componentsDir = (fis.config.get('component.dir') || '/components').replace(/\/$/, '');
 
@@ -166,215 +36,77 @@ function buildComponentsInfo() {
         json.name = json.name || cName;
         componentsInfo[cName] = json;
     });
-}
 
-
-function ucfirst(str) {
-    return str.substring(0, 1).toUpperCase() + str.substring(1);
-}
-
-function findResource(name, file, finder) {
-    finder = finder || fis.uri;
-    var extList = ['.js', '.css', '.html', '.tpl', '.vm'];
-    var info = finder(name, file.dirname);
-
-    for (var i = 0, len = extList.length; i < len && !info.file; i++) {
-        info = finder(name + extList[i], file.dirname);
-    }
-
-    return info;
-}
-
-// 扩展
-exports.parse = function(content, file, settings) {
-    return content;
-}
-
-exports.replaceRequire = function(value, file) {
-    var info = fis.uri.getId(value, file.dirname);
-    var quote = info.quote;
-    var m;
-
-    // 如果找不到，则尝试短路径。
-    if (!info.file && (m = /^([0-9a-z-_]+)(?:\/(.+))?$/.exec(info.rest))) {
-        var cName = m[1];
-        var subpath = m[2];
-        var config = componentsInfo[cName];
-        var resolved;
-
-        if (!config) {
-            return value;
-        }
-
-        if (subpath) {
-            resolved = findResource(componentsDir + '/' + cName + '/' + subpath, file, fis.uri.getId);
-        } else {
-            resolved = findResource(componentsDir + '/' + cName + '/' + (config.main || 'main'), file, fis.uri.getId);
-        }
-
-        // 根据规则找到了。
-        if (resolved.file) {
-            return quote + resolved.file.getId()  + info.query + quote;
-        }
-    }
-
-    return value;
-};
-
-exports.replace = function(value, file) {
-    var info = fis.uri(value, file.dirname);
-    var quote = info.quote;
-    var m;
-
-    // 如果找不到，则尝试短路径。
-    if (!info.file && (m = /^([0-9a-z-_]+)(?:\/(.+))?$/.exec(info.rest))) {
-        var cName = m[1];
-        var subpath = m[2];
-        var config = componentsInfo[cName];
-        var resolved;
-
-        if (!config) {
-            return value;
-        }
-
-        if (subpath) {
-            resolved = findResource(componentsDir + '/' + cName + '/' + subpath, file);
-        } else {
-            resolved = findResource(componentsDir + '/' + cName + '/' + (config.main || 'main'), file);
-        }
-
-        // 根据规则找到了。
-        if (resolved.file) {
-            return quote + resolved.file.subpath + info.query + quote;
-        }
-    }
-
-    return value;
-};
-
-function addAsync(value) {
-    var hasBrackets = false;
-    var values = [];
-    value = value.trim().replace(/(^\[|\]$)/g, function(m, v) {
-        if (v) {
-            hasBrackets = true;
-        }
-        return '';
-    });
-    values = value.split(/\s*,\s*/);
-    values = values.map(function(v) {
-        return '<<<require:' + v + '>>>';
+    var stack = [];
+    fis.emitter.on('compile:start', function(file) {
+        file.useShortPath = file.useShortPath !== false;
+        stack.unshift(file.useShortPath);
     });
 
-    return {
-        values: values,
-        hasBrackets: hasBrackets
-    };
-}
+    fis.emitter.on('compile:end', function(file) {
+        stack.shift();
+    });
 
-//"abc?__inline" return true
-//"abc?__inlinee" return false
-//"abc?a=1&__inline"" return true
-function isInline(info){
-    return /[?&]__inline(?:[=&'"]|$)/.test(info.query);
-}
 
-exports.compileHtmlReplaceCallback = function compileHtmlReplaceCallback(m, $1, $2, $3, $4, $5, $6, $7, $8){
-    if($1){//<script>
-        var embed = '';
-        $1 = $1.replace(/(\s(?:data-)?src\s*=\s*)('[^']+'|"[^"]+"|[^\s\/>]+)/ig, function(m, prefix, value){
-            if(isInline(fis.util.query(value))){
-                embed += map.embed.ld + value + map.embed.rd;
-                return '';
-            } else {
-                return prefix + map.uri.ld + value + map.uri.rd;
+    // hack fis kernel.
+    function hack(origin) {
+        return function() {
+            var info = origin.apply(this, arguments);
+
+            // 如果已经找到了，没必要再找了。
+            if (info.file) {
+                return info;
             }
-        });
-        if(embed){
-            //embed file
-            m = $1 + embed;
-        } else if(!/\s+type\s*=/i.test($1) || /\s+type\s*=\s*(['"]?)text\/javascript\1/i.test($1)) {
-            //without attrubite [type] or must be [text/javascript]
-            m = $1 + exports.extJs($2);
-        } else {
-            //other type as html
-            m = $1 + exports.extHtml($2);
-        }
-    } else if($3){//<style>
-        m = $3 + exports.extCss($4);
-    } else if($5){//<img|embed|audio|video|link|object|source>
-        var tag = $5.toLowerCase();
-        if(tag === 'link'){
-            var inline = '', isCssLink = false, isImportLink = false;
-            var result = m.match(/\srel\s*=\s*('[^']+'|"[^"]+"|[^\s\/>]+)/i);
-            if(result && result[1]){
-                var rel = result[1].replace(/^['"]|['"]$/g, '').toLowerCase();
-                isCssLink = rel === 'stylesheet';
-                isImportLink = rel === 'import';
+
+            // 如果关闭了短路径功能。 useShortPath == false
+            if (!stack[0]) {
+                return info;
             }
-            m = m.replace(/(\s(?:data-)?href\s*=\s*)('[^']+'|"[^"]+"|[^\s\/>]+)/ig, function(_, prefix, value){
-                if((isCssLink || isImportLink) && isInline(fis.util.query(value))){
-                    if(isCssLink) {
-                        inline += '<style' + m.substring(5).replace(/\/(?=>$)/, '').replace(/\s+(?:charset|href|data-href|hreflang|rel|rev|sizes|target)\s*=\s*(?:'[^']+'|"[^"]+"|[^\s\/>]+)/ig, '');
-                    }
-                    inline += map.embed.ld + value + map.embed.rd;
-                    if(isCssLink) {
-                        inline += '</style>';
-                    }
-                    return '';
-                } else {
-                    return prefix + map.uri.ld + value + map.uri.rd;
+
+            var m = /^([0-9a-z-_]+)(?:\/(.+))?$/.exec(info.rest);
+            if (m) {
+                var cName = m[1];
+                var subpath = m[2];
+                var config = componentsInfo[cName];
+                var resolved;
+
+                if (!config) {
+                    return info;
                 }
-            });
-            m = inline || m;
-        } else if(tag === 'object'){
-            m = m.replace(/(\sdata\s*=\s*)('[^']+'|"[^"]+"|[^\s\/>]+)/ig, function(m, prefix, value){
-                return prefix + map.uri.ld + value + map.uri.rd;
-            });
-        } else {
-            m = m.replace(/(\s(?:data-)?src\s*=\s*)('[^']+'|"[^"]+"|[^\s\/>]+)/ig, function(m, prefix, value){
-                var key = isInline(fis.util.query(value)) ? 'embed' : 'uri';
-                return prefix + map[key]['ld'] + value + map[key]['rd'];
-            });
-        }
-    } else if($6){
-        m = map.embed.ld + $6 + map.embed.rd;
-    } else if($7){
-        m = '<!--' + fis.compile.analyseComment($7) + $8;
-    }
-    return m;
-}
 
-exports.extHtml = function(content, callback) {
-    content = fis.compile.extHtml(content, callback || exports.compileHtmlReplaceCallback);
-    return content;
-};
+                if (subpath) {
+                    resolved = findResource(componentsDir + '/' + cName + '/' + subpath, path, origin);
+                } else {
+                    resolved = findResource(componentsDir + '/' + cName + '/' + (config.main || 'main'), path, origin);
+                }
 
-exports.extJs = function(content, callback) {
-    content = fis.compile.extJs(content, callback);
-
-    // 扩展 require.async(xxx), require([xxx])
-    var reg = /"(?:[^\\"\r\n\f]|\\[\s\S])*"|'(?:[^\\'\n\r\f]|\\[\s\S])*'|(\/\/[^\r\n\f]+|\/\*[\s\S]+?(?:\*\/|$))|\b(require\.async|require)\s*\(\s*("(?:[^\\"\r\n\f]|\\[\s\S])*"|'(?:[^\\'\n\r\f]|\\[\s\S])*'|\[[\s\S]*?\])\s*/g;
-
-    content = content.replace(reg, function(m, comment, type, value) {
-        if(type){
-            var res = addAsync(value);
-
-            if (res.hasBrackets) {
-                m = type + '([' + res.values.join(', ') + ']';
-            } else {
-                m = type + '(' + res.values.join(', ');
+                // 根据规则找到了。
+                if (resolved.file) {
+                    return resolved;
+                }
             }
+
+            return info;
+        }
+    }
+
+    function findResource(name, path, finder) {
+        finder = finder || fis.uri;
+        var extList = ['.js', '.css', '.html', '.tpl', '.vm'];
+        var info = finder(name, path);
+
+        for (var i = 0, len = extList.length; i < len && !info.file; i++) {
+            info = finder(name + extList[i], path);
         }
 
-        return m;
+        return info;
+    }
+
+    // hack into fis.uri
+    var uri = fis.uri;
+    var hacked = fis.uri = hack(fis.uri);
+    Object.keys(uri).forEach(function(key) {
+        hacked[key] = uri[key];
     });
-
-    return content;
-};
-
-exports.extCss = function(content, callback) {
-    content = fis.compile.extCss(content, callback);
-
-    return content;
-};
+    hacked.getId = hack(uri.getId);
+}
