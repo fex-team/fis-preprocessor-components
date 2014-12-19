@@ -2,6 +2,39 @@ var path = require('path');
 var map = fis.compile.lang;
 var componentsInfo, componentsDir;
 
+
+function embeddedCheck(main, embedded){
+    main = fis.file.wrap(main).realpath;
+    embedded = fis.file.wrap(embedded).realpath;
+    if(main === embedded){
+        error('unable to embed file[' + main + '] into itself.');
+    } else if(embeddedMap[embedded]) {
+        var next = embeddedMap[embedded],
+            msg = [embedded];
+        while(next && next !== embedded){
+            msg.push(next);
+            next = embeddedMap[next];
+        }
+        msg.push(embedded);
+        error('circular dependency on [' + msg.join('] -> [') + '].');
+    }
+    embeddedMap[embedded] = main;
+    return true;
+}
+
+function embeddedUnlock(file){
+    delete embeddedMap[file.realpath];
+}
+
+function addDeps(a, b){
+    if(a && a.cache && b){
+        if(b.cache){
+            a.cache.mergeDeps(b.cache);
+        }
+        a.cache.addDeps(b.realpath || b);
+    }
+}
+
 var exports = module.exports = function (content, file, settings) {
     buildComponentsInfo();
 
@@ -22,19 +55,79 @@ var exports = module.exports = function (content, file, settings) {
             value = fn(value, file);
         }
 
-        if (type === 'embed' || type === 'jsEmbed') {
-            value = '<<<' + type + ':' + value + '>>>';
-        } else if (type === 'uri' && /[?&]__inline(?:[=&'"]|$)/.test(value)) {
-            var info = fis.uri(value, file.dirname);
 
-            if (info.file) {
-                value = '<<<' + (info.file.isJsLike ? 'jsEmbed' : 'embed') + ':' + value + '>>>';
+
+        var ret = '', info;
+            try {
+                switch(type){
+                    case 'require':
+                        info = fis.uri.getId(value, file.dirname);
+                        file.addRequire(info.id);
+                        ret = info.quote + info.id + info.quote;
+                        break;
+                    case 'uri':
+                        info = fis.uri(value, file.dirname);
+                        if(info.file && info.file.isFile()){
+                            if(info.file.useHash && fis.compile.settings.hash){
+                                if(embeddedCheck(file, info.file)){
+                                    fis.compile(info.file);
+                                    addDeps(file, info.file);
+                                }
+                            }
+                            var query = (info.file.query && info.query) ? '&' + info.query.substring(1) : info.query;
+                            var url = info.file.getUrl(fis.compile.settings.hash, fis.compile.settings.domain);
+                            var hash = info.hash || info.file.hash;
+                            ret = info.quote + url + query + hash + info.quote;
+                        } else {
+                            ret = value;
+                        }
+                        break;
+                    case 'dep':
+                        if(file.cache){
+                            info = fis.uri(value, file.dirname);
+                            addDeps(file, info.file);
+                        } else {
+                            fis.log.warning('unable to add deps to file [' + path + ']');
+                        }
+                        break;
+                    case 'embed':
+                    case 'jsEmbed':
+                        info = fis.uri(value, file.dirname);
+                        var f;
+                        if(info.file){
+                            f = info.file;
+                        } else if(fis.util.isAbsolute(info.rest)){
+                            f = fis.file(info.rest);
+                        }
+                        if(f && f.isFile()){
+                            if(embeddedCheck(file, f)){
+                                fis.compile(f);
+                                addDeps(file, f);
+                                f.requires.forEach(function(id){
+                                    file.addRequire(id);
+                                });
+                                if(f.isText()){
+                                    ret = f.getContent();
+                                    if(type === 'jsEmbed' && !f.isJsLike && !f.isJsonLike){
+                                        ret = JSON.stringify(ret);
+                                    }
+                                } else {
+                                    ret = info.quote + f.getBase64() + info.quote;
+                                }
+                            }
+                        } else {
+                            fis.log.error('unable to embed non-existent file [' + value + ']');
+                        }
+                        break;
+                    default :
+                        fis.log.error('unsupported fis language tag [' + type + ']');
+                }
+            } catch (e) {
+                embeddedMap = {};
+                e.message = e.message + ' in [' + file.subpath + ']';
+                throw  e;
             }
-        } else if (type === 'uri' && file.isJsLike) {
-            value = '<<<' + type + ':' + value + '>>>';
-        }
-
-        return value;
+            return ret;
     });
     return content;
 };
