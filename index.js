@@ -2,7 +2,13 @@ var path = require('path');
 var map = fis.compile.lang;
 var componentsInfo, componentsDir;
 
+var embeddedMap = {};
 
+function error(msg){
+    //for watching, unable to exit
+    embeddedMap = {};
+    fis.log.error(msg);
+}
 function embeddedCheck(main, embedded){
     main = fis.file.wrap(main).realpath;
     embedded = fis.file.wrap(embedded).realpath;
