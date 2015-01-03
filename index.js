@@ -77,7 +77,7 @@ function init() {
                 if (subpath) {
                     resolved = findResource(componentsDir + '/' + cName + '/' + subpath, path, origin);
                 } else {
-                    resolved = findResource(componentsDir + '/' + cName + '/' + (config.main || 'main'), path, origin);
+                    resolved = findResource(componentsDir + '/' + cName + '/' + (config.main || 'index'), path, origin);
                 }
 
                 // 根据规则找到了。
