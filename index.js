@@ -50,12 +50,20 @@ function init() {
 
     // hack fis kernel.
     function hack(origin) {
-        return function() {
+        return function(filepath, dir) {
             var info = origin.apply(this, arguments);
 
             // 如果已经找到了，没必要再找了。
             if (info.file) {
                 return info;
+            } else if (info.rest[0] === '.' && !/\.([^\.\/]+)$/.test(info.rest)) {
+                var test = findResource(info.rest, dir, origin);
+
+                if (test.file) {
+                    info.id = resolved.file.getId();
+                    info.file = resolved.file;
+                    return info;
+                }
             }
 
             // 如果关闭了短路径功能。 useShortPath == false
