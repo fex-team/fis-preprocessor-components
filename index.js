@@ -56,18 +56,18 @@ function init() {
             // 如果已经找到了，没必要再找了。
             if (info.file) {
                 return info;
-            } else if (info.rest[0] === '.' && !/\.([^\.\/]+)$/.test(info.rest)) {
+            } else if (info.rest[0] === '.' && !/\.(js)$/.test(info.rest)) {
                 var test = findResource(info.rest, dir, origin);
 
                 if (test.file) {
-                    info.id = resolved.file.getId();
-                    info.file = resolved.file;
+                    info.id = test.file.getId();
+                    info.file = test.file;
                     return info;
                 }
             }
 
             // 如果关闭了短路径功能。 useShortPath == false
-            if (!stack[0]) {
+            if (stack.length && !stack[0]) {
                 return info;
             }
 
