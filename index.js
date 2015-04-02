@@ -71,7 +71,7 @@ function init() {
                 return info;
             }
 
-            var m = /^([0-9a-z-_]+)(?:\/(.+))?$/.exec(info.rest);
+            var m = /^([0-9a-zA-Z-_]+)(?:\/(.+))?$/.exec(info.rest);
             if (m) {
                 var cName = m[1];
                 var subpath = m[2];
