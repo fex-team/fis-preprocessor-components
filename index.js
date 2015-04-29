@@ -14,7 +14,7 @@ function init(settings) {
 
     // 读取组件信息
     componentsInfo = {};
-    paths = settings.paths;
+    paths = settings.paths || {};
     componentsDir = (fis.config.get('component.dir') || '/components').replace(/\/$/, '');
 
     if (componentsDir[0] !== '/') {
