@@ -1,12 +1,12 @@
 var path = require('path');
-var inited = false, componentsInfo, componentsDir;
+var inited = false, componentsInfo, componentsDir, paths;
 
 var exports = module.exports = function (content, file, settings) {
-    init();
+    init(settings);
     return content;
 };
 
-function init() {
+function init(settings) {
     if (inited) {
         return;
     }
@@ -14,6 +14,7 @@ function init() {
 
     // 读取组件信息
     componentsInfo = {};
+    paths = settings.paths;
     componentsDir = (fis.config.get('component.dir') || '/components').replace(/\/$/, '');
 
     if (componentsDir[0] !== '/') {
@@ -78,20 +79,38 @@ function init() {
                 var config = componentsInfo[cName];
                 var resolved;
 
-                if (!config) {
-                    return info;
-                }
-
                 if (subpath) {
                     resolved = findResource(componentsDir + '/' + cName + '/' + subpath, path, origin);
                 } else {
-                    resolved = findResource(componentsDir + '/' + cName + '/' + (config.main || 'index'), path, origin);
+                    resolved = findResource(componentsDir + '/' + cName + '/' + (config && config.main || 'index'), path, origin);
                 }
 
                 // 根据规则找到了。
                 if (resolved.file) {
                     info.id = resolved.file.getId();
                     info.file = resolved.file;
+                } else if (paths[cName]) {
+                    var dirs = paths[cName];
+                    if (!Array.isArray(dirs)) {
+                        dirs = [dirs];
+                    }
+
+                    dirs.every(function(dir) {
+                        var filepath = dir;
+                        if (subpath) {
+                            filepath = path.join(filepath, subpath);
+                        }
+
+                        if (~filepath.indexOf(':')) {
+                            info.id = filepath;
+                        } else {
+                            resolved = findResource(path.basename(filepath), path.dirname(filepath), origin);
+                            if (resolved.file) {
+                                info.id = resolved.file.getId();
+                                info.file = resolved.file;
+                            }
+                        }
+                    });
                 }
             }
 
