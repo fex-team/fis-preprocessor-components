@@ -1,6 +1,6 @@
 {
   "name": "fis-preprocessor-components",
-  "version": "1.0.17",
+  "version": "1.0.18",
   "description": "Add short name of components.",
   "main": "index.js",
   "scripts": {
