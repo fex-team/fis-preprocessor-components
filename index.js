@@ -103,13 +103,17 @@ function init(settings) {
 
                         if (~filepath.indexOf(':')) {
                             info.id = filepath;
+                            return false;
                         } else {
                             resolved = findResource(path.basename(filepath), path.dirname(filepath), origin);
                             if (resolved.file) {
                                 info.id = resolved.file.getId();
                                 info.file = resolved.file;
+                                return false;
                             }
                         }
+
+                        return true;
                     });
                 }
             }
